@@ -4,8 +4,10 @@ Configured for KrishiSetu (SIH26132) - Production & Local.
 """
 
 import os
+import sys
 from pathlib import Path
 from datetime import timedelta
+from django.core.exceptions import ImproperlyConfigured
 import dj_database_url
 from dotenv import load_dotenv
 
@@ -15,10 +17,16 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Load environment variables from .env file
 load_dotenv(BASE_DIR / '.env')
 
-# Quick-start development settings - unsuitable for production
-SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-dev-fallback-key-krishisetu')
+# Render injects RENDER=true for every service. Default DEBUG off there.
+IS_RENDER = bool(os.getenv('RENDER') or os.getenv('RENDER_EXTERNAL_HOSTNAME'))
+DEBUG = os.getenv('DEBUG', 'False' if IS_RENDER else 'True').lower() in ('true', '1', 't')
 
-DEBUG = os.getenv('DEBUG', 'True').lower() in ('true', '1', 't')
+SECRET_KEY = os.getenv('SECRET_KEY')
+if not SECRET_KEY:
+    if DEBUG and not IS_RENDER:
+        SECRET_KEY = 'django-insecure-dev-fallback-key-krishisetu'
+    else:
+        raise ImproperlyConfigured('SECRET_KEY must be set via environment variables in production.')
 
 ALLOWED_HOSTS = [host.strip() for host in os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',') if host.strip()]
 
@@ -105,10 +113,19 @@ else:
             'ENGINE': 'django.db.backends.postgresql',
             'NAME': os.getenv('DB_NAME', 'krishisetu_db'),
             'USER': os.getenv('DB_USER', 'postgres'),
-            'PASSWORD': os.getenv('DB_PASSWORD', '1234'),
+            'PASSWORD': os.getenv('DB_PASSWORD', ''),
             'HOST': os.getenv('DB_HOST', 'localhost'),
             'PORT': os.getenv('DB_PORT', '5432'),
             'CONN_MAX_AGE': 60,
+        }
+    }
+
+# Isolated in-memory SQLite for `manage.py test` so CI/local tests do not need PostgreSQL.
+if 'test' in sys.argv:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': ':memory:',
         }
     }
 
@@ -192,11 +209,16 @@ CORS_ALLOWED_ORIGIN_REGEXES = [
 ]
 
 CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_ALL_ORIGINS = False
 
 CSRF_TRUSTED_ORIGINS = [
-    'https://*.onrender.com',
-    'https://*.vercel.app',
-    'https://*.tmp.now',
-    'http://localhost:5173',
-    'http://127.0.0.1:5173',
+    origin.strip() for origin in os.getenv(
+        'CSRF_TRUSTED_ORIGINS',
+        'https://*.onrender.com,https://*.vercel.app,https://*.tmp.now,http://localhost:5173,http://127.0.0.1:5173'
+    ).split(',') if origin.strip()
 ]
+
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+if IS_RENDER:
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True

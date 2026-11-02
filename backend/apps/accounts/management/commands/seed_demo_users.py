@@ -1,3 +1,4 @@
+import os
 from django.core.management.base import BaseCommand
 from apps.accounts.models import CustomUser, FarmerProfile, BuyerProfile
 
@@ -13,6 +14,11 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
+        seed_enabled = os.getenv('SEED_DEMO_USERS', 'true').lower() in ('true', '1', 't', 'yes')
+        if not seed_enabled:
+            self.stdout.write(self.style.WARNING('SEED_DEMO_USERS is disabled; skipping demo account seeding.'))
+            return
+
         reset_passwords = options.get('reset_passwords', False)
 
         # 1. Seed Farmer Demo Account

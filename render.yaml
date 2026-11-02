@@ -10,6 +10,8 @@ services:
     runtime: python
     rootDir: backend
     buildCommand: "./build.sh"
+    # Start command must only serve traffic. Do not migrate here: two Gunicorn
+    # workers would race. Migrations run once during build.sh.
     startCommand: "gunicorn krishisetu.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 120"
     healthCheckPath: /api/v1/health/
     plan: free
@@ -28,3 +30,7 @@ services:
         value: "1"
       - key: WEB_CONCURRENCY
         value: "2"
+      - key: SEED_DEMO_USERS
+        value: "true"
+      - key: CORS_ALLOWED_ORIGINS
+        value: "https://instant-geode-9y9nkbl.tmp.now,https://instant-geode-9y9nkbl-raushan-kumars-projects-fed41dec.vercel.app,http://localhost:5173,http://127.0.0.1:5173"

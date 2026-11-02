@@ -28,6 +28,7 @@ class RegisterView(generics.CreateAPIView):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
+        user = CustomUser.objects.select_related('farmer_profile', 'buyer_profile').get(pk=user.pk)
 
         # Generate JWT tokens for immediate authentication
         refresh = RefreshToken.for_user(user)
@@ -68,7 +69,9 @@ class CurrentUserView(generics.RetrieveUpdateAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_object(self):
-        return self.request.user
+        return CustomUser.objects.select_related('farmer_profile', 'buyer_profile').get(
+            pk=self.request.user.pk
+        )
 
 
 class FarmerProfileView(generics.RetrieveUpdateAPIView):

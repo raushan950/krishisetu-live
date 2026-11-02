@@ -1,21 +1,19 @@
 import axios from 'axios';
+import { resolveApiBaseUrl } from './apiConfig';
 
-const API_BASE_URL = (
-  import.meta.env.VITE_API_URL ||
-  (import.meta.env.PROD
-    ? 'https://krishisetu-api-70rj.onrender.com/api/v1'
-    : 'http://127.0.0.1:8000/api/v1')
-).replace(/\/+$/, '');
+export const API_BASE_URL = resolveApiBaseUrl({
+  viteApiUrl: import.meta.env.VITE_API_URL,
+  isProd: import.meta.env.PROD,
+});
 
 const axiosClient = axios.create({
   baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 30000, // 30-second timeout to handle Render cold starts gracefully
+  timeout: 60000,
 });
 
-// Request interceptor: Inject Bearer token
 axiosClient.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('access_token');
@@ -27,7 +25,6 @@ axiosClient.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Token refresh synchronization state
 let isRefreshing = false;
 let failedQueue = [];
 
@@ -42,13 +39,18 @@ const processQueue = (error, token = null) => {
   failedQueue = [];
 };
 
-// Response interceptor: Auto-refresh expired access tokens
+const clearSession = () => {
+  localStorage.removeItem('access_token');
+  localStorage.removeItem('refresh_token');
+  localStorage.removeItem('user_info');
+  window.dispatchEvent(new Event('auth:session-expired'));
+};
+
 axiosClient.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
 
-    // Only intercept 401 errors for non-auth endpoints that haven't been retried
     if (
       error.response &&
       error.response.status === 401 &&
@@ -62,16 +64,11 @@ axiosClient.interceptors.response.use(
 
       const refreshToken = localStorage.getItem('refresh_token');
       if (!refreshToken) {
-        // No refresh token available - clear local state
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
-        localStorage.removeItem('user_info');
-        window.dispatchEvent(new Event('auth:session-expired'));
+        clearSession();
         return Promise.reject(error);
       }
 
       if (isRefreshing) {
-        // Another refresh is in progress; queue this request
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject });
         })
@@ -93,27 +90,25 @@ axiosClient.interceptors.response.use(
           const newAccess = res.data.access;
           localStorage.setItem('access_token', newAccess);
 
-          // If token rotation returned a new refresh token, store it
           if (res.data.refresh) {
             localStorage.setItem('refresh_token', res.data.refresh);
           }
 
-          // Notify AuthContext of the new token
           window.dispatchEvent(new CustomEvent('auth:token-refreshed', {
-            detail: { access: newAccess }
+            detail: { access: newAccess },
           }));
 
           processQueue(null, newAccess);
           originalRequest.headers.Authorization = `Bearer ${newAccess}`;
           return axiosClient(originalRequest);
         }
+
+        clearSession();
+        processQueue(error, null);
+        return Promise.reject(error);
       } catch (refreshErr) {
         processQueue(refreshErr, null);
-        // Clean session on refresh failure
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
-        localStorage.removeItem('user_info');
-        window.dispatchEvent(new Event('auth:session-expired'));
+        clearSession();
         return Promise.reject(refreshErr);
       } finally {
         isRefreshing = false;

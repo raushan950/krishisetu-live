@@ -1,3 +1,4 @@
+import re
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth.password_validation import validate_password
@@ -29,8 +30,8 @@ class UserDetailSerializer(serializers.ModelSerializer):
     Unified user detail serializer used across login, registration, and /auth/me/.
     Provides both explicit role profile accessors and a unified 'profile' field.
     """
-    farmer_profile = FarmerProfileSerializer(read_only=True)
-    buyer_profile = BuyerProfileSerializer(read_only=True)
+    farmer_profile = FarmerProfileSerializer(read_only=True, allow_null=True)
+    buyer_profile = BuyerProfileSerializer(read_only=True, allow_null=True)
     profile = serializers.SerializerMethodField()
 
     class Meta:
@@ -70,11 +71,15 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id']
 
+    def validate_phone(self, value):
+        phone = (value or '').strip()
+        if not re.fullmatch(r'\d{10,15}', phone):
+            raise serializers.ValidationError('Enter a valid 10 to 15 digit phone number.')
+        return phone
+
     def validate(self, attrs):
         if 'email' in attrs:
             attrs['email'] = attrs['email'].strip().lower()
-        if 'phone' in attrs:
-            attrs['phone'] = attrs['phone'].strip()
         if 'full_name' in attrs:
             attrs['full_name'] = attrs['full_name'].strip()
 
@@ -143,6 +148,6 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             attrs['email'] = attrs['email'].strip().lower()
 
         data = super().validate(attrs)
-        # Unified user schema identical to /auth/me/ and /auth/register/
-        data['user'] = UserDetailSerializer(self.user).data
+        user = CustomUser.objects.select_related('farmer_profile', 'buyer_profile').get(pk=self.user.pk)
+        data['user'] = UserDetailSerializer(user).data
         return data

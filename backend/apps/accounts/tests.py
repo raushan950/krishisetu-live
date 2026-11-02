@@ -119,6 +119,13 @@ class AuthenticationTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('password', response.data)
 
+    def test_registration_invalid_phone(self):
+        invalid_data = self.farmer_data.copy()
+        invalid_data['phone'] = '98-123'
+        response = self.client.post(self.farmer_register_url, invalid_data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('phone', response.data)
+
     def test_registration_missing_required_fields(self):
         """Test that missing mandatory fields (full_name, phone, email) return 400."""
         incomplete_data = {

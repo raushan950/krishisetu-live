@@ -1,94 +1,24 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useCallback, useContext, useState, useEffect } from 'react';
 import axiosClient from '../api/axiosClient';
+import { extractErrorMessage } from '../utils/authErrors';
 
 const AuthContext = createContext(null);
 
-/**
- * Intelligent error parser for Axios/DRF responses:
- * Extracts user-readable messages from field validations, network failures, and server errors.
- */
-export const extractErrorMessage = (err, defaultMsg = "An unexpected error occurred.") => {
-  if (!err) return defaultMsg;
-
-  // 1. Network / Connection Error (Backend offline, Render sleeping, or CORS blocked)
-  if (!err.response) {
-    if (err.message === 'Network Error' || err.code === 'ERR_NETWORK') {
-      return "Unable to connect to the backend server. The service may be waking up (which takes ~40 seconds on free hosting) or experiencing a network issue. Please retry in a moment.";
-    }
-    if (err.code === 'ECONNABORTED' || err.message?.toLowerCase().includes('timeout')) {
-      return "Connection timed out waiting for backend server response. Please try again.";
-    }
-    return err.message || defaultMsg;
-  }
-
-  const { data, status } = err.response;
-
-  // 2. Server-side errors (500, 502, 503, 504)
-  if (status >= 500) {
-    return `Server error (${status}). The backend encountered an unexpected error. Please try again shortly.`;
-  }
-
-  // 3. String / HTML response
-  if (typeof data === 'string') {
-    if (data.trim().startsWith('<')) {
-      return `Server error (${status}). Please try again shortly.`;
-    }
-    return data;
-  }
-
-  // 4. Structured DRF Error Dictionary or Array
-  if (data && typeof data === 'object') {
-    if (typeof data.detail === 'string') {
-      return data.detail;
-    }
-    if (typeof data.message === 'string') {
-      return data.message;
-    }
-    if (Array.isArray(data.non_field_errors) && data.non_field_errors.length > 0) {
-      return data.non_field_errors[0];
-    }
-    if (Array.isArray(data) && data.length > 0 && typeof data[0] === 'string') {
-      return data[0];
-    }
-
-    // Extract first field validation error
-    const keys = Object.keys(data);
-    if (keys.length > 0) {
-      const firstKey = keys[0];
-      const val = data[firstKey];
-      const fieldLabel = firstKey
-        .replace(/_/g, ' ')
-        .replace(/\b\w/g, (char) => char.toUpperCase());
-
-      if (Array.isArray(val) && val.length > 0) {
-        return `${fieldLabel}: ${val[0]}`;
-      }
-      if (typeof val === 'string') {
-        return `${fieldLabel}: ${val}`;
-      }
-      if (typeof val === 'object' && val !== null) {
-        const subKeys = Object.keys(val);
-        if (subKeys.length > 0) {
-          const subVal = val[subKeys[0]];
-          if (Array.isArray(subVal) && subVal.length > 0) {
-            return `${fieldLabel} (${subKeys[0]}): ${subVal[0]}`;
-          }
-          if (typeof subVal === 'string') {
-            return `${fieldLabel} (${subKeys[0]}): ${subVal}`;
-          }
-        }
-      }
-    }
-  }
-
-  return defaultMsg;
-};
+export { extractErrorMessage };
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(localStorage.getItem('access_token') || null);
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState(null);
+
+  const logout = useCallback(() => {
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+    localStorage.removeItem('user_info');
+    setToken(null);
+    setUser(null);
+  }, []);
 
   // Synchronize state with background token refresh and expiry events
   useEffect(() => {
@@ -141,7 +71,7 @@ export const AuthProvider = ({ children }) => {
     };
 
     initializeAuth();
-  }, []);
+  }, [logout]);
 
   const login = async (email, password) => {
     setAuthError(null);
@@ -186,14 +116,6 @@ export const AuthProvider = ({ children }) => {
       setAuthError(msg);
       return { success: false, error: msg };
     }
-  };
-
-  const logout = () => {
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
-    localStorage.removeItem('user_info');
-    setToken(null);
-    setUser(null);
   };
 
   const value = {

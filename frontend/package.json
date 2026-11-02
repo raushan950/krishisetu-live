@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run"
   },
   "dependencies": {
     "axios": "^1.21.0",
@@ -25,6 +26,7 @@
     "oxlint": "^1.89.0",
     "postcss": "^8.5.32",
     "tailwindcss": "^4.3.3",
-    "vite": "^8.3.5"
+    "vite": "^8.3.5",
+    "vitest": "^3.2.4"
   }
 }
